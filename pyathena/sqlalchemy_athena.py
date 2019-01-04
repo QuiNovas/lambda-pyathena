@@ -9,7 +9,8 @@ from future.utils import raise_from
 from sqlalchemy.engine import reflection
 from sqlalchemy.engine.default import DefaultDialect
 from sqlalchemy.exc import NoSuchTableError, OperationalError
-from sqlalchemy.sql.compiler import IdentifierPreparer, SQLCompiler
+from sqlalchemy.sql.compiler import (BIND_PARAMS, BIND_PARAMS_ESC,
+                                     IdentifierPreparer, SQLCompiler)
 from sqlalchemy.sql.sqltypes import (BIGINT, BINARY, BOOLEAN, DATE, DECIMAL, FLOAT,
                                      INTEGER, NULLTYPE, STRINGTYPE, TIMESTAMP)
 from tenacity import retry_if_exception, stop_after_attempt, wait_exponential
@@ -38,6 +39,29 @@ class AthenaCompiler(SQLCompiler):
     https://github.com/dropbox/PyHive/blob/master/pyhive/sqlalchemy_presto.py"""
     def visit_char_length_func(self, fn, **kw):
         return 'length{0}'.format(self.function_argspec(fn, **kw))
+
+    def visit_textclause(self, textclause, **kw):
+        def do_bindparam(m):
+            name = m.group(1)
+            if name in textclause._bindparams:
+                return self.process(textclause._bindparams[name], **kw)
+            else:
+                return self.bindparam_string(name, **kw)
+
+        if not self.stack:
+            self.isplaintext = True
+
+        if len(textclause._bindparams) == 0:
+            # Prevents double escaping of percent character
+            return textclause.text
+        else:
+            # un-escape any \:params
+            return BIND_PARAMS_ESC.sub(
+                lambda m: m.group(1),
+                BIND_PARAMS.sub(
+                    do_bindparam,
+                    self.post_process_text(textclause.text))
+            )
 
 
 _TYPE_MAPPINGS = {
@@ -95,8 +119,8 @@ class AthenaDialect(DefaultDialect):
         #   {aws_access_key_id}:{aws_secret_access_key}@athena.{region_name}.amazonaws.com:443/
         #   {schema_name}?s3_staging_dir={s3_staging_dir}&...
         opts = {
-            'aws_access_key_id': url.username,
-            'aws_secret_access_key': url.password,
+            'aws_access_key_id': url.username if url.username else None,
+            'aws_secret_access_key': url.password if url.password else None,
             'region_name': re.sub(r'^athena\.([a-z0-9-]+)\.amazonaws\.com$', r'\1', url.host),
             'schema_name': url.database if url.database else 'default'
         }
@@ -124,8 +148,8 @@ class AthenaDialect(DefaultDialect):
 
     def has_table(self, connection, table_name, schema=None):
         try:
-            self.get_columns(connection, table_name, schema)
-            return True
+            columns = self.get_columns(connection, table_name, schema)
+            return True if columns else False
         except NoSuchTableError:
             return False
 

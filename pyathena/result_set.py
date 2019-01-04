@@ -390,12 +390,16 @@ class AthenaPandasResultSet(AthenaResultSet):
             _logger.exception('Failed to download csv.')
             raise_from(OperationalError(*e.args), e)
         else:
-            df = pd.read_csv(io.BytesIO(response['Body'].read()),
-                             dtype=self._dtypes(),
-                             converters=self._converters(),
-                             parse_dates=self._parse_dates(),
-                             infer_datetime_format=True)
-            df = self._trunc_date(df)
+            length = response['ContentLength']
+            if length:
+                df = pd.read_csv(io.BytesIO(response['Body'].read()),
+                                 dtype=self._dtypes(),
+                                 converters=self._converters(),
+                                 parse_dates=self._parse_dates(),
+                                 infer_datetime_format=True)
+                df = self._trunc_date(df)
+            else:  # Allow empty response so DDL can be used
+                df = pd.DataFrame()
             return df
 
     def as_pandas(self):
