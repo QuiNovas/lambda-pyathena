@@ -71,30 +71,20 @@ class CursorIterator(with_metaclass(ABCMeta, object)):
 
 class BaseCursor(with_metaclass(ABCMeta, object)):
 
-    def __init__(self, connection, s3_staging_dir, schema_name, poll_interval,
-                 encryption_option, kms_key, converter, formatter,
-                 retry_exceptions, retry_attempt, retry_multiplier,
-                 retry_max_delay, retry_exponential_base, **kwargs):
+    def __init__(self, connection, s3_staging_dir, schema_name, work_group,
+                 poll_interval, encryption_option, kms_key, converter, formatter,
+                 retry_config, **kwargs):
         super(BaseCursor, self).__init__(**kwargs)
         self._connection = connection
         self._s3_staging_dir = s3_staging_dir
         self._schema_name = schema_name
+        self._work_group = work_group
         self._poll_interval = poll_interval
         self._encryption_option = encryption_option
         self._kms_key = kms_key
         self._converter = converter
         self._formatter = formatter
-
-        self.retry_exceptions = retry_exceptions
-        self.retry_attempt = retry_attempt
-        self.retry_multiplier = retry_multiplier
-        self.retry_max_delay = retry_max_delay
-        self.retry_exponential_base = retry_exponential_base
-
-        self.retry_attempt = retry_attempt
-        self.retry_multiplier = retry_multiplier
-        self.retry_max_delay = retry_max_delay
-        self.retry_exponential_base = retry_exponential_base
+        self._retry_config = retry_config
 
     @property
     def connection(self):
@@ -104,11 +94,7 @@ class BaseCursor(with_metaclass(ABCMeta, object)):
         request = {'QueryExecutionId': query_id}
         try:
             response = retry_api_call(self._connection.client.get_query_execution,
-                                      exceptions=self.retry_exceptions,
-                                      attempt=self.retry_attempt,
-                                      multiplier=self.retry_multiplier,
-                                      max_delay=self.retry_max_delay,
-                                      exp_base=self.retry_exponential_base,
+                                      config=self._retry_config,
                                       logger=_logger,
                                       **request)
         except Exception as e:
@@ -127,16 +113,22 @@ class BaseCursor(with_metaclass(ABCMeta, object)):
             else:
                 time.sleep(self._poll_interval)
 
-    def _build_start_query_execution_request(self, query):
+    def _build_start_query_execution_request(self, query, work_group=None, s3_staging_dir=None):
+        if not s3_staging_dir:
+            s3_staging_dir = self._s3_staging_dir
         request = {
             'QueryString': query,
             'QueryExecutionContext': {
                 'Database': self._schema_name,
             },
             'ResultConfiguration': {
-                'OutputLocation': self._s3_staging_dir,
+                'OutputLocation': s3_staging_dir,
             },
         }
+        if self._work_group or work_group:
+            request.update({
+                'WorkGroup': work_group if work_group else self._work_group
+            })
         if self._encryption_option:
             enc_conf = {
                 'EncryptionOption': self._encryption_option,
@@ -150,18 +142,14 @@ class BaseCursor(with_metaclass(ABCMeta, object)):
             })
         return request
 
-    def _execute(self, operation, parameters=None):
+    def _execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None):
         query = self._formatter.format(operation, parameters)
         _logger.debug(query)
 
-        request = self._build_start_query_execution_request(query)
+        request = self._build_start_query_execution_request(query, work_group, s3_staging_dir)
         try:
             response = retry_api_call(self._connection.client.start_query_execution,
-                                      exceptions=self.retry_exceptions,
-                                      attempt=self.retry_attempt,
-                                      multiplier=self.retry_multiplier,
-                                      max_delay=self.retry_max_delay,
-                                      exp_base=self.retry_exponential_base,
+                                      config=self._retry_config,
                                       logger=_logger,
                                       **request)
         except Exception as e:
@@ -171,7 +159,7 @@ class BaseCursor(with_metaclass(ABCMeta, object)):
             return response.get('QueryExecutionId', None)
 
     @abstractmethod
-    def execute(self, operation, parameters=None):
+    def execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None):
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
@@ -186,11 +174,7 @@ class BaseCursor(with_metaclass(ABCMeta, object)):
         request = {'QueryExecutionId': query_id}
         try:
             retry_api_call(self._connection.client.stop_query_execution,
-                           exceptions=self.retry_exceptions,
-                           attempt=self.retry_attempt,
-                           multiplier=self.retry_multiplier,
-                           max_delay=self.retry_max_delay,
-                           exp_base=self.retry_exponential_base,
+                           config=self._retry_config,
                            logger=_logger,
                            **request)
         except Exception as e:

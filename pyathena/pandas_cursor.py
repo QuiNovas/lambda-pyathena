@@ -17,14 +17,21 @@ _logger = logging.getLogger(__name__)
 
 class PandasCursor(BaseCursor, CursorIterator, WithResultSet):
 
-    def __init__(self, connection, s3_staging_dir, schema_name, poll_interval,
-                 encryption_option, kms_key, converter, formatter,
-                 retry_exceptions, retry_attempt, retry_multiplier,
-                 retry_max_delay, retry_exponential_base, **kwargs):
-        super(PandasCursor, self).__init__(connection, s3_staging_dir, schema_name, poll_interval,
-                                           encryption_option, kms_key, converter, formatter,
-                                           retry_exceptions, retry_attempt, retry_multiplier,
-                                           retry_max_delay, retry_exponential_base, **kwargs)
+    def __init__(self, connection, s3_staging_dir, schema_name, work_group,
+                 poll_interval, encryption_option, kms_key, converter, formatter,
+                 retry_config, **kwargs):
+        super(PandasCursor, self).__init__(
+            connection=connection,
+            s3_staging_dir=s3_staging_dir,
+            schema_name=schema_name,
+            work_group=work_group,
+            poll_interval=poll_interval,
+            encryption_option=encryption_option,
+            kms_key=kms_key,
+            converter=converter,
+            formatter=formatter,
+            retry_config=retry_config,
+            **kwargs)
 
     @property
     def rownumber(self):
@@ -35,15 +42,17 @@ class PandasCursor(BaseCursor, CursorIterator, WithResultSet):
             self._result_set.close()
 
     @synchronized
-    def execute(self, operation, parameters=None):
+    def execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None):
         self._reset_state()
-        self._query_id = self._execute(operation, parameters)
+        self._query_id = self._execute(operation,
+                                       parameters=parameters,
+                                       work_group=work_group,
+                                       s3_staging_dir=s3_staging_dir)
         query_execution = self._poll(self._query_id)
         if query_execution.state == AthenaQueryExecution.STATE_SUCCEEDED:
             self._result_set = AthenaPandasResultSet(
                 self._connection, self._converter, query_execution, self.arraysize,
-                self.retry_exceptions, self.retry_attempt, self.retry_multiplier,
-                self.retry_max_delay, self.retry_exponential_base)
+                self._retry_config)
         else:
             raise OperationalError(query_execution.state_change_reason)
         return self

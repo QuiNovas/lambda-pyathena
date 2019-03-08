@@ -22,16 +22,21 @@ _logger = logging.getLogger(__name__)
 
 class AsyncCursor(BaseCursor):
 
-    def __init__(self, connection, s3_staging_dir, schema_name, poll_interval,
-                 encryption_option, kms_key, converter, formatter,
-                 retry_exceptions, retry_attempt, retry_multiplier,
-                 retry_max_delay, retry_exponential_base,
-                 max_workers=(cpu_count() or 1) * 5,
+    def __init__(self, connection, s3_staging_dir, schema_name, work_group,
+                 poll_interval, encryption_option, kms_key, converter, formatter,
+                 retry_config, max_workers=(cpu_count() or 1) * 5,
                  arraysize=CursorIterator.DEFAULT_FETCH_SIZE):
-        super(AsyncCursor, self).__init__(connection, s3_staging_dir, schema_name, poll_interval,
-                                          encryption_option, kms_key, converter, formatter,
-                                          retry_exceptions, retry_attempt, retry_multiplier,
-                                          retry_max_delay, retry_exponential_base)
+        super(AsyncCursor, self).__init__(
+            connection=connection,
+            s3_staging_dir=s3_staging_dir,
+            schema_name=schema_name,
+            work_group=work_group,
+            poll_interval=poll_interval,
+            encryption_option=encryption_option,
+            kms_key=kms_key,
+            converter=converter,
+            formatter=formatter,
+            retry_config=retry_config)
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._arraysize = arraysize
 
@@ -65,12 +70,14 @@ class AsyncCursor(BaseCursor):
     def _collect_result_set(self, query_id):
         query_execution = self._poll(query_id)
         return AthenaResultSet(
-            self._connection, self._converter, query_execution, self._arraysize,
-            self.retry_exceptions, self.retry_attempt, self.retry_multiplier,
-            self.retry_max_delay, self.retry_exponential_base)
+            self._connection, self._converter, query_execution,
+            self._arraysize, self._retry_config)
 
-    def execute(self, operation, parameters=None):
-        query_id = self._execute(operation, parameters)
+    def execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None):
+        query_id = self._execute(operation,
+                                 parameters=parameters,
+                                 work_group=work_group,
+                                 s3_staging_dir=s3_staging_dir)
         return query_id, self._executor.submit(self._collect_result_set, query_id)
 
     def executemany(self, operation, seq_of_parameters):
