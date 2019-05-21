@@ -34,7 +34,7 @@ Requirements
 
 * Python
 
-  - CPython 2,7, 3,4, 3.5, 3.6
+  - CPython 2,7, 3.5, 3.6, 3.7
 
 Installation
 ------------
@@ -48,7 +48,7 @@ Extra packages:
 +---------------+--------------------------------------+------------------+
 | Package       | Install command                      | Version          |
 +===============+======================================+==================+
-| Pandas        | ``pip install PyAthena[Pandas]``     | >=0.19.0         |
+| Pandas        | ``pip install PyAthena[Pandas]``     | >=0.24.0         |
 +---------------+--------------------------------------+------------------+
 | SQLAlchemy    | ``pip install PyAthena[SQLAlchemy]`` | >=1.0.0, <1.3.0  |
 +---------------+--------------------------------------+------------------+
@@ -368,7 +368,7 @@ The as_pandas method returns `DataFrame object`_.
 
 .. code:: python
 
-    from pyathena.connection import Connection
+    from pyathena import connect
     from pyathena.pandas_cursor import PandasCursor
 
     cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
@@ -383,7 +383,7 @@ Support fetch and iterate query results.
 
 .. code:: python
 
-    from pyathena.connection import Connection
+    from pyathena import connect
     from pyathena.pandas_cursor import PandasCursor
 
     cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
@@ -397,7 +397,7 @@ Support fetch and iterate query results.
 
 .. code:: python
 
-    from pyathena.connection import Connection
+    from pyathena import connect
     from pyathena.pandas_cursor import PandasCursor
 
     cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
@@ -412,7 +412,7 @@ The DATE and TIMESTAMP of Athena's data type are returned as `pandas.Timestamp`_
 
 .. code:: python
 
-    from pyathena.connection import Connection
+    from pyathena import connect
     from pyathena.pandas_cursor import PandasCursor
 
     cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
@@ -426,7 +426,7 @@ Execution information of the query can also be retrieved.
 
 .. code:: python
 
-    from pyathena.connection import Connection
+    from pyathena import connect
     from pyathena.pandas_cursor import PandasCursor
 
     cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
@@ -491,6 +491,6 @@ Run test multiple Python versions
     $ pip install pipenv
     $ pipenv install --dev
     $ pipenv run scripts/test_data/upload_test_data.sh
-    $ pyenv local 3.6.5 3.5.5 3.4.8 2.7.14
+    $ pyenv local 3.7.2 3.6.8 3.5.7 2.7.16
     $ pipenv run tox
     $ pipenv run scripts/test_data/delete_test_data.sh
