@@ -1,8 +1,8 @@
 .. image:: https://img.shields.io/pypi/pyversions/PyAthena.svg
     :target: https://pypi.python.org/pypi/PyAthena/
 
-.. image:: https://travis-ci.org/laughingman7743/PyAthena.svg?branch=master
-    :target: https://travis-ci.org/laughingman7743/PyAthena
+.. image:: https://travis-ci.com/laughingman7743/PyAthena.svg?branch=master
+    :target: https://travis-ci.com/laughingman7743/PyAthena
 
 .. image:: https://codecov.io/gh/laughingman7743/PyAthena/branch/master/graph/badge.svg
     :target: https://codecov.io/gh/laughingman7743/PyAthena
@@ -50,7 +50,7 @@ Extra packages:
 +===============+======================================+==================+
 | Pandas        | ``pip install PyAthena[Pandas]``     | >=0.24.0         |
 +---------------+--------------------------------------+------------------+
-| SQLAlchemy    | ``pip install PyAthena[SQLAlchemy]`` | >=1.0.0, <1.3.0  |
+| SQLAlchemy    | ``pip install PyAthena[SQLAlchemy]`` | >=1.0.0, <2.0.0  |
 +---------------+--------------------------------------+------------------+
 
 Usage
@@ -119,8 +119,8 @@ if ``%`` character is contained in your query, it must be escaped with ``%%`` li
 SQLAlchemy
 ~~~~~~~~~~
 
-Install SQLAlchemy with ``pip install "SQLAlchemy>=1.0.0, <1.3.0"`` or ``pip install PyAthena[SQLAlchemy]``.
-Supported SQLAlchemy is 1.0.0 or higher and less than 1.3.0.
+Install SQLAlchemy with ``pip install "SQLAlchemy>=1.0.0, <2.0.0"`` or ``pip install PyAthena[SQLAlchemy]``.
+Supported SQLAlchemy is 1.0.0 or higher and less than 2.0.0.
 
 .. code:: python
 
@@ -299,7 +299,7 @@ It also has information on the result of query execution.
     result_set = future.result()
     print(result_set.fetchall())
 
-A query ID is required to cancel a query with the asynchronous cursor.
+A query ID is required to cancel a query with the AsynchronousCursor.
 
 .. code:: python
 
@@ -364,7 +364,7 @@ It can also be used by specifying the cursor class when calling the connection o
     cursor = Connection(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
                         region_name='us-west-2').cursor(PandasCursor)
 
-The as_pandas method returns `DataFrame object`_.
+The as_pandas method returns a `DataFrame object`_.
 
 .. code:: python
 
@@ -442,10 +442,242 @@ Execution information of the query can also be retrieved.
     print(cursor.execution_time_in_millis)
     print(cursor.output_location)
 
+If you want to customize the Dataframe object dtypes and converters, create a converter class like this:
+
+.. code:: python
+
+    from pyathena.converter import Converter
+
+    class CustomPandasTypeConverter(Converter):
+
+        def __init__(self):
+            super(CustomPandasTypeConverter, self).__init__(
+                mappings=None,
+                types={
+                    'boolean': object,
+                    'tinyint': float,
+                    'smallint': float,
+                    'integer': float,
+                    'bigint': float,
+                    'float': float,
+                    'real': float,
+                    'double': float,
+                    'decimal': float,
+                    'char': str,
+                    'varchar': str,
+                    'array': str,
+                    'map': str,
+                    'row': str,
+                    'varbinary': str,
+                    'json': str,
+                }
+            )
+
+        def convert(self, type_, value):
+            # Not used in PandasCursor.
+            pass
+
+Specify the combination of converter functions in the mappings argument and the dtypes combination in the types argument.
+
+Then you simply specify an instance of this class in the convertes argument when creating a connection or cursor.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.pandas_cursor import PandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2').cursor(PandasCursor, converter=CustomPandasTypeConverter())
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.pandas_cursor import PandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     converter=CustomPandasTypeConverter()).cursor(PandasCursor)
+
 NOTE: PandasCursor handles the CSV file on memory. Pay attention to the memory capacity.
 
 .. _`DataFrame object`: https://pandas.pydata.org/pandas-docs/stable/generated/pandas.DataFrame.html
 .. _`pandas.Timestamp`: https://pandas.pydata.org/pandas-docs/stable/generated/pandas.Timestamp.html
+
+AsyncPandasCursor
+~~~~~~~~~~~~~~~~~
+
+AsyncPandasCursor is an AsyncCursor that can handle Pandas DataFrame.
+This cursor directly handles the CSV of query results output to S3 in the same way as PandasCursor.
+
+You can use the AsyncPandasCursor by specifying the ``cursor_class``
+with the connect method or connection object.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+.. code:: python
+
+    from pyathena.connection import Connection
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = Connection(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                        region_name='us-west-2',
+                        cursor_class=AsyncPandasCursor).cursor()
+
+It can also be used by specifying the cursor class when calling the connection object's cursor method.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2').cursor(AsyncPandasCursor)
+
+.. code:: python
+
+    from pyathena.connection import Connection
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = Connection(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                        region_name='us-west-2').cursor(AsyncPandasCursor)
+
+The default number of workers is 5 or cpu number * 5.
+If you want to change the number of workers you can specify like the following.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor(max_workers=10)
+
+The execute method of the AsynchronousPandasCursor returns the tuple of the query ID and the `future object`_.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT * FROM many_rows")
+
+The return value of the `future object`_ is an ``AthenaPandasResultSet`` object.
+This object has an interface similar to ``AthenaResultSetObject``.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT * FROM many_rows")
+    result_set = future.result()
+    print(result_set.state)
+    print(result_set.state_change_reason)
+    print(result_set.completion_date_time)
+    print(result_set.submission_date_time)
+    print(result_set.data_scanned_in_bytes)
+    print(result_set.execution_time_in_millis)
+    print(result_set.output_location)
+    print(result_set.description)
+    for row in result_set:
+        print(row)
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT * FROM many_rows")
+    result_set = future.result()
+    print(result_set.fetchall())
+
+This object also has an as_pandas method that returns a `DataFrame object`_ similar to the PandasCursor.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT * FROM many_rows")
+    result_set = future.result()
+    df = result_set.as_pandas()
+    print(df.describe())
+    print(df.head())
+
+The DATE and TIMESTAMP of Athena's data type are returned as `pandas.Timestamp`_ type.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT col_timestamp FROM one_row_complex")
+    result_set = future.result()
+    print(type(result_set.fetchone()[0]))  # <class 'pandas._libs.tslibs.timestamps.Timestamp'>
+
+As with AsynchronousCursor, you need a query ID to cancel a query.
+
+.. code:: python
+
+    from pyathena import connect
+    from pyathena.async_pandas_cursor import AsyncPandasCursor
+
+    cursor = connect(s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2',
+                     cursor_class=AsyncPandasCursor).cursor()
+
+    query_id, future = cursor.execute("SELECT * FROM many_rows")
+    cursor.cancel(query_id)
+
+Quickly re-run queries
+~~~~~~~~~~~~~~~~~~~~~~
+
+You can attempt to re-use the results from a previously run query to help save time and money in the cases where your underlying data isn't changing. Set the ``cache_size`` parameter of ``cursor.execute()`` to a number larger than 0 to enable cacheing.
+
+.. code:: python
+
+    from pyathena import connect
+
+    cursor = connect(aws_access_key_id='YOUR_ACCESS_KEY_ID',
+                     aws_secret_access_key='YOUR_SECRET_ACCESS_KEY',
+                     s3_staging_dir='s3://YOUR_S3_BUCKET/path/to/',
+                     region_name='us-west-2').cursor()
+    cursor.execute("SELECT * FROM one_row")  # run once
+    print(cursor.query_id)
+    cursor.execute("SELECT * FROM one_row", cache_size=10)  # re-use earlier results
+    print(cursor.query_id)  # You should expect to see the same Query ID
+
+Results will only be re-used if the query strings match *exactly*, and the query was a DML statement (the assumption being that you always want to re-run queries like ``CREATE TABLE`` and ``DROP TABLE``).
+
+The S3 staging directory is not checked, so it's possible that the location of the results is not in your provided ``s3_staging_dir``.
 
 Credentials
 -----------
@@ -459,6 +691,7 @@ Additional environment variable:
 .. code:: bash
 
     $ export AWS_ATHENA_S3_STAGING_DIR=s3://YOUR_S3_BUCKET/path/to/
+    $ export AWS_ATHENA_WORK_GROUP=YOUR_WORK_GROUP
 
 Testing
 -------
@@ -471,6 +704,8 @@ Depends on the following environment variables:
     $ export AWS_SECRET_ACCESS_KEY=YOUR_SECRET_ACCESS_KEY
     $ export AWS_DEFAULT_REGION=us-west-2
     $ export AWS_ATHENA_S3_STAGING_DIR=s3://YOUR_S3_BUCKET/path/to/
+
+And you need to create a workgroup named ``test-pyathena``.
 
 Run test
 ~~~~~~~~

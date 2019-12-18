@@ -70,14 +70,19 @@ class AsyncCursor(BaseCursor):
     def _collect_result_set(self, query_id):
         query_execution = self._poll(query_id)
         return AthenaResultSet(
-            self._connection, self._converter, query_execution,
-            self._arraysize, self._retry_config)
+            connection=self._connection,
+            converter=self._converter,
+            query_execution=query_execution,
+            arraysize=self._arraysize,
+            retry_config=self._retry_config)
 
-    def execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None):
+    def execute(self, operation, parameters=None, work_group=None, s3_staging_dir=None,
+                cache_size=0):
         query_id = self._execute(operation,
                                  parameters=parameters,
                                  work_group=work_group,
-                                 s3_staging_dir=s3_staging_dir)
+                                 s3_staging_dir=s3_staging_dir,
+                                 cache_size=cache_size)
         return query_id, self._executor.submit(self._collect_result_set, query_id)
 
     def executemany(self, operation, seq_of_parameters):

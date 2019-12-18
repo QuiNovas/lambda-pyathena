@@ -2,13 +2,10 @@
 from __future__ import absolute_import
 from __future__ import unicode_literals
 
-import binascii
 import collections
 import io
-import json
 import logging
 import re
-from decimal import Decimal
 
 from future.utils import raise_from
 from past.builtins.misc import xrange
@@ -45,6 +42,12 @@ class WithResultSet(object):
         return self._result_set.description
 
     @property
+    def database(self):
+        if not self.has_result_set:
+            return None
+        return self._result_set.database
+
+    @property
     def query_id(self):
         return self._query_id
 
@@ -53,6 +56,12 @@ class WithResultSet(object):
         if not self.has_result_set:
             return None
         return self._result_set.query
+
+    @property
+    def statement_type(self):
+        if not self.has_result_set:
+            return None
+        return self._result_set.statement_type
 
     @property
     def state(self):
@@ -96,6 +105,24 @@ class WithResultSet(object):
             return None
         return self._result_set.output_location
 
+    @property
+    def encryption_option(self):
+        if not self.has_result_set:
+            return None
+        return self._result_set.encryption_option
+
+    @property
+    def kms_key(self):
+        if not self.has_result_set:
+            return None
+        return self._result_set.kms_key
+
+    @property
+    def work_group(self):
+        if not self.has_result_set:
+            return None
+        return self._result_set.work_group
+
 
 class AthenaResultSet(CursorIterator):
 
@@ -116,12 +143,20 @@ class AthenaResultSet(CursorIterator):
             self._pre_fetch()
 
     @property
+    def database(self):
+        return self._query_execution.database
+
+    @property
     def query_id(self):
         return self._query_execution.query_id
 
     @property
     def query(self):
         return self._query_execution.query
+
+    @property
+    def statement_type(self):
+        return self._query_execution.statement_type
 
     @property
     def state(self):
@@ -152,6 +187,18 @@ class AthenaResultSet(CursorIterator):
         return self._query_execution.output_location
 
     @property
+    def encryption_option(self):
+        return self._query_execution.encryption_option
+
+    @property
+    def kms_key(self):
+        return self._query_execution.kms_key
+
+    @property
+    def work_group(self):
+        return self._query_execution.work_group
+
+    @property
     def description(self):
         if self._meta_data is None:
             return None
@@ -171,7 +218,7 @@ class AthenaResultSet(CursorIterator):
     def __fetch(self, next_token=None):
         if not self._query_execution.query_id:
             raise ProgrammingError('QueryExecutionId is none or empty.')
-        if self._query_execution.state != 'SUCCEEDED':
+        if self._query_execution.state != AthenaQueryExecution.STATE_SUCCEEDED:
             raise ProgrammingError('QueryExecutionState is not SUCCEEDED.')
         request = {
             'QueryExecutionId': self._query_execution.query_id,
@@ -292,11 +339,6 @@ class AthenaResultSet(CursorIterator):
 class AthenaPandasResultSet(AthenaResultSet):
 
     _pattern_output_location = re.compile(r'^s3://(?P<bucket>[a-zA-Z0-9.\-_]+)/(?P<key>.+)$')
-    _converters = {
-        'decimal': Decimal,
-        'varbinary': lambda b: binascii.a2b_hex(''.join(b.split(' '))),
-        'json': json.loads,
-    }
     _parse_dates = [
         'date',
         'time',
@@ -315,7 +357,11 @@ class AthenaPandasResultSet(AthenaResultSet):
         self._arraysize = arraysize
         self._client = self._connection.session.client(
             's3', region_name=self._connection.region_name, **self._connection._client_kwargs)
-        self._df = self._as_pandas()
+        if self._query_execution.state == AthenaQueryExecution.STATE_SUCCEEDED:
+            self._df = self._as_pandas()
+        else:
+            import pandas as pd
+            self._df = pd.DataFrame()
         self._iterrows = self._df.iterrows()
 
     @classmethod
@@ -327,36 +373,17 @@ class AthenaPandasResultSet(AthenaResultSet):
             raise DataError('Unknown `output_location` format.')
 
     @property
-    def _dtypes(self):
-        if not hasattr(self, '__dtypes'):
-            import pandas as pd
-            self.__dtypes = {
-                'boolean': bool,
-                'tinyint': pd.Int64Dtype(),
-                'smallint': pd.Int64Dtype(),
-                'integer': pd.Int64Dtype(),
-                'bigint': pd.Int64Dtype(),
-                'float': float,
-                'real': float,
-                'double': float,
-                'char': str,
-                'varchar': str,
-                'array': str,
-                'map': str,
-                'row': str,
-            }
-        return self.__dtypes
-
-    @property
     def dtypes(self):
         return {
-            d[0]: self._dtypes[d[1]] for d in self.description if d[1] in self._dtypes
+            d[0]: self._converter.types[d[1]] for d in self.description
+            if d[1] in self._converter.types
         }
 
     @property
     def converters(self):
         return {
-            d[0]: self._converters[d[1]] for d in self.description if d[1] in self._converters
+            d[0]: self._converter.mappings[d[1]] for d in self.description
+            if d[1] in self._converter.mappings
         }
 
     @property
